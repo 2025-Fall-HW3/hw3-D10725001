@@ -63,6 +63,11 @@ class EqualWeightPortfolio:
         TODO: Complete Task 1 Below
         """
 
+        # Equal weight across all non-excluded assets for every date
+        equal_weight = 1 / len(assets)
+        self.portfolio_weights[assets] = equal_weight
+        # Excluded asset (SPY) always gets zero allocation
+        self.portfolio_weights[self.exclude] = 0
         """
         TODO: Complete Task 1 Above
         """
@@ -114,6 +119,14 @@ class RiskParityPortfolio:
         TODO: Complete Task 2 Below
         """
 
+        # Rolling inverse-volatility weights using past `lookback` returns
+        for i in range(self.lookback + 1, len(df)):
+            window_returns = df_returns[assets].iloc[i - self.lookback : i]
+            vol = window_returns.std()
+            # Avoid division by zero
+            inv_vol = 1 / vol.replace(0, np.nan)
+            weights = inv_vol / inv_vol.sum()
+            self.portfolio_weights.loc[df.index[i], assets] = weights.values
 
 
         """
@@ -188,10 +201,14 @@ class MeanVariancePortfolio:
                 TODO: Complete Task 3 Below
                 """
 
-                # Sample Code: Initialize Decision w and the Objective
-                # NOTE: You can modify the following code
-                w = model.addMVar(n, name="w", ub=1)
-                model.setObjective(w.sum(), gp.GRB.MAXIMIZE)
+                # Decision variables: portfolio weights (long-only, fully invested)
+                w = model.addMVar(n, lb=0, name="w")
+                model.addConstr(w.sum() == 1, name="budget")
+
+                # Objective: maximize expected return minus risk penalty
+                ret_term = mu @ w
+                risk_term = w @ Sigma @ w
+                model.setObjective(ret_term - gamma / 2 * risk_term, gp.GRB.MAXIMIZE)
 
                 """
                 TODO: Complete Task 3 Above

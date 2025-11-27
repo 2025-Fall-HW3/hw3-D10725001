@@ -51,12 +51,13 @@ class MyPortfolio:
     NOTE: You can modify the initialization function
     """
 
-    def __init__(self, price, exclude, lookback=50, gamma=0):
+    def __init__(self, price, exclude, lookback=120, top_n=4, ma_window=150):
         self.price = price
         self.returns = price.pct_change().fillna(0)
         self.exclude = exclude
         self.lookback = lookback
-        self.gamma = gamma
+        self.top_n = top_n
+        self.ma_window = ma_window
 
     def calculate_weights(self):
         # Get the assets by excluding the specified column
@@ -70,8 +71,40 @@ class MyPortfolio:
         """
         TODO: Complete Task 4 Below
         """
-        
-        
+        # Trend-filtered momentum with risk control:
+        # 1) Only consider assets trading above their moving average (ma_window)
+        # 2) Rank remaining assets by past lookback Sharpe (mean / vol)
+        # 3) Allocate inverse-vol weights to top_n winners
+        ma = self.price[assets].rolling(self.ma_window).mean()
+        start_idx = max(self.lookback, self.ma_window) + 1
+
+        for i in range(start_idx, len(self.price)):
+            window = self.returns[assets].iloc[i - self.lookback : i]
+            mu = window.mean()
+            vol = window.std().replace(0, np.nan)
+
+            # Trend filter
+            trend_mask = (self.price[assets].iloc[i] > ma.iloc[i]).fillna(False)
+            sharpe_score = (mu / vol).dropna()
+            sharpe_score = sharpe_score[trend_mask[sharpe_score.index]]
+
+            # Pick strongest assets; if fewer than top_n available, use what's left
+            winners = sharpe_score.nlargest(min(self.top_n, len(sharpe_score)))
+            if winners.empty:
+                continue
+
+            inv_vol = 1 / vol[winners.index]
+            weights = inv_vol / inv_vol.sum()
+
+            # Reset row to zero to avoid carrying old positions, then assign winners
+            self.portfolio_weights.loc[self.price.index[i], assets] = 0
+
+            self.portfolio_weights.loc[self.price.index[i], winners.index] = (
+                weights.values
+            )
+
+        # Always keep the excluded asset at zero
+        self.portfolio_weights[self.exclude] = 0
         """
         TODO: Complete Task 4 Above
         """
